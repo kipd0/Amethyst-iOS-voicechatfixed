@@ -1,3 +1,12 @@
+what this fork does?
+fixes the voice chat now you ca use your mic !
+fixes the echo now it will not echo when other people talk!
+if something doesn’t work about voice chat please report it to me via discord my username is kipd0
+also aamc can u guys unban me from the discord server pleawse?
+
+
+
+
 # Angel Aura Amethyst (iOS)
 [![Development build](https://github.com/AngelAuraMC/Amethyst-iOS/actions/workflows/development.yml/badge.svg?branch=main)](https://github.com/AngelAuraMC/Amethyst-iOS/actions/workflows/development.yml)
 [![Crowdin](https://badges.crowdin.net/angelauramc/localized.svg)](https://crowdin.com/project/angelauramc)
