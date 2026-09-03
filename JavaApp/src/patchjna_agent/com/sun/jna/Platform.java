@@ -25,12 +25,12 @@ package com.sun.jna;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.*;
-import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /** Provide simplified platform information. */
 public final class Platform {
+
     public static final int UNSPECIFIED = -1;
     public static final int MAC = 0;
     public static final int LINUX = 1;
@@ -81,11 +81,8 @@ public final class Platform {
     /** Current platform architecture. */
     public static final String ARCH;
 
-    private static final List<Class> matchingClasses = new ArrayList<Class>();
     private static Object stackWalker;
     private static Method stackWalkerGetCaller;
-    private static boolean isMacFoundVoiceChatMod;
-    private static int isMacFindRetries = 10;
 
     static {
         osType = MAC;
@@ -97,34 +94,58 @@ public final class Platform {
         HAS_JAWT = HAS_AWT && osType != MAC;
         HAS_BUFFERS = true;
         RO_FIELDS = osType != WINDOWSCE;
+
         C_LIBRARY_NAME = "c";
         MATH_LIBRARY_NAME = "m";
-        ARCH = getCanonicalArchitecture(System.getProperty("os.arch"), osType);
 
-        // Windows aarch64 callbacks disabled via ASMFN_OFF (no mingw support)
+        ARCH = getCanonicalArchitecture(
+                System.getProperty("os.arch"),
+                osType
+        );
+
+        // Windows aarch64 callbacks disabled via ASMFN_OFF
+        // (no mingw support)
         HAS_DLL_CALLBACKS = false;
 
         RESOURCE_PREFIX = getNativeLibraryResourcePrefix();
 
         try {
-            Class cStackWalker = Class.forName("java.lang.StackWalker");
-            Class cStackWalkerOption = Class.forName("java.lang.StackWalker$Option");
+            Class cStackWalker =
+                    Class.forName("java.lang.StackWalker");
+
+            Class cStackWalkerOption =
+                    Class.forName("java.lang.StackWalker$Option");
 
             Object RETAIN_CLASS_REFERENCE =
                     cStackWalkerOption
-                            .getMethod("valueOf", String.class)
-                            .invoke(null, "RETAIN_CLASS_REFERENCE");
+                            .getMethod(
+                                    "valueOf",
+                                    String.class
+                            )
+                            .invoke(
+                                    null,
+                                    "RETAIN_CLASS_REFERENCE"
+                            );
 
             stackWalker =
                     cStackWalker
-                            .getMethod("getInstance", cStackWalkerOption)
-                            .invoke(null, RETAIN_CLASS_REFERENCE);
+                            .getMethod(
+                                    "getInstance",
+                                    cStackWalkerOption
+                            )
+                            .invoke(
+                                    null,
+                                    RETAIN_CLASS_REFERENCE
+                            );
 
             stackWalkerGetCaller =
-                    cStackWalker.getMethod("getCallerClass");
+                    cStackWalker.getMethod(
+                            "getCallerClass"
+                    );
 
         } catch (Throwable th) {
-            isMacFindRetries = 0;
+            stackWalker = null;
+            stackWalkerGetCaller = null;
         }
     }
 
@@ -136,63 +157,75 @@ public final class Platform {
     }
 
     public static final boolean isMac() {
-        if (isMacFindRetries <= 0) {
+
+        /*
+         * iOS needs to identify as macOS for normal JNA behaviour.
+         *
+         * Simple Voice Chat and Plasmo Voice use Platform.isMac()
+         * to completely disable OpenAL microphone capture on macOS.
+         *
+         * On Amethyst/iOS we specifically want those voice-chat
+         * callers to believe they are NOT on macOS, while every
+         * other JNA caller still sees macOS.
+         *
+         * Do not use Class.forName() here.
+         * Do not use a retry counter.
+         *
+         * SVC may load after JNA has already called isMac() many
+         * times, especially with newer JNA versions such as 5.17.
+         */
+
+        if (
+                stackWalker == null
+                || stackWalkerGetCaller == null
+        ) {
             return true;
-        } else if (!isMacFoundVoiceChatMod) {
-            isMacFindRetries--;
-
-            try {
-                matchingClasses.add(
-                        Class.forName(
-                                "de.maxhenkel.voicechat.config.ClientConfig"
-                        )
-                );
-
-                matchingClasses.add(
-                        Class.forName(
-                                "de.maxhenkel.voicechat.VoicechatClient"
-                        )
-                );
-
-                matchingClasses.add(
-                        Class.forName(
-                                "de.maxhenkel.voicechat.voice.client.microphone.MicrophoneManager"
-                        )
-                );
-
-                isMacFoundVoiceChatMod = true;
-
-            } catch (Throwable th) {
-            }
-
-            try {
-                matchingClasses.add(
-                        Class.forName(
-                                "su.plo.voice.client.audio.device.VoiceDeviceManager"
-                        )
-                );
-
-                isMacFoundVoiceChatMod = true;
-
-            } catch (Throwable th) {
-            }
         }
 
-        // All voice chat mods call this thing and straight out disable OpenAL input
-        // so we must trick them into NOT forcefully disabling it
         try {
             Class caller =
-                    (Class) stackWalkerGetCaller.invoke(stackWalker);
+                    (Class) stackWalkerGetCaller.invoke(
+                            stackWalker
+                    );
+
+            String callerName = caller.getName();
 
             System.out.println(
-                    "Platform.isMac called from " + caller.getName()
+                    "Platform.isMac called from "
+                            + callerName
             );
 
-            return !matchingClasses.contains(caller);
+            if (
+                    callerName.equals(
+                            "de.maxhenkel.voicechat.config.ClientConfig"
+                    )
+                    || callerName.equals(
+                            "de.maxhenkel.voicechat.VoicechatClient"
+                    )
+                    || callerName.equals(
+                            "de.maxhenkel.voicechat.voice.client.microphone.MicrophoneManager"
+                    )
+                    || callerName.equals(
+                            "su.plo.voice.client.audio.device.VoiceDeviceManager"
+                    )
+            ) {
+                System.out.println(
+                        "PatchJNAAgent: Reporting non-macOS to voice chat caller "
+                                + callerName
+                );
+
+                return false;
+            }
+
+            return true;
 
         } catch (Throwable e) {
-            // We're calling a public method, this should never happen
-            throw new RuntimeException(e);
+
+            /*
+             * If caller detection fails, keep normal Amethyst/JNA
+             * behaviour and report macOS instead of crashing.
+             */
+            return true;
         }
     }
 
@@ -214,7 +247,8 @@ public final class Platform {
 
     /** Returns true for any windows variant. */
     public static final boolean isWindows() {
-        return osType == WINDOWS || osType == WINDOWSCE;
+        return osType == WINDOWS
+                || osType == WINDOWSCE;
     }
 
     public static final boolean isSolaris() {
@@ -246,7 +280,8 @@ public final class Platform {
     }
 
     public static final boolean isX11() {
-        // TODO: check filesystem for /usr/X11 or some other X11-specific test
+        // TODO: check filesystem for /usr/X11
+        // or some other X11-specific test
         return false;
     }
 
@@ -282,7 +317,10 @@ public final class Platform {
         return false;
     }
 
-    static String getCanonicalArchitecture(String arch, int platform) {
+    static String getCanonicalArchitecture(
+            String arch,
+            int platform
+    ) {
         return arch;
     }
 
@@ -291,25 +329,28 @@ public final class Platform {
     }
 
     /**
-     * Generate a canonical String prefix based on the current OS
-     * type/arch/name.
+     * Generate a canonical String prefix based on
+     * the current OS type/arch/name.
      */
     static String getNativeLibraryResourcePrefix() {
-        String prefix = System.getProperty("jna.prefix");
+
+        String prefix =
+                System.getProperty("jna.prefix");
 
         if (prefix != null) {
             return prefix;
-        } else {
-            return getNativeLibraryResourcePrefix(
-                    getOSType(),
-                    System.getProperty("os.arch"),
-                    System.getProperty("os.name")
-            );
         }
+
+        return getNativeLibraryResourcePrefix(
+                getOSType(),
+                System.getProperty("os.arch"),
+                System.getProperty("os.name")
+        );
     }
 
     /**
-     * Generate a canonical String prefix based on the given OS type/arch/name.
+     * Generate a canonical String prefix based
+     * on the given OS type/arch/name.
      *
      * @param osType from {@link #getOSType()}
      * @param arch from <code>os.arch</code> System property
