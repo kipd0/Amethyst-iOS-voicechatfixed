@@ -29,43 +29,23 @@ jobs:
       run: |
         brew install ldid wget make
         sudo mkdir -p /usr/local/bin
-        sudo ln -s /opt/homebrew/bin/gmake /usr/local/bin/gmake
+        sudo ln -sf /opt/homebrew/bin/gmake /usr/local/bin/gmake
 
-    - name: Run Makefile
+    - name: Build Amethyst
       run: |
         JDK_BASE_PATH="${{ steps.setup-java.outputs.path }}"
         export PATH="$JDK_BASE_PATH/bin:$PATH"
-        make clean JAVA_HOME="$JDK_BASE_PATH" BOOTJDK="$JDK_BASE_PATH/bin" || true
-        make JAVA_HOME="$JDK_BASE_PATH" BOOTJDK="$JDK_BASE_PATH/bin"
 
-    - name: Find Scheme and Build Xcode Project
-      run: |
-        JDK_BASE_PATH="${{ steps.setup-java.outputs.path }}"
-        SCHEME_NAME=$(xcodebuild -project Amethyst.xcodeproj -list | awk '/Schemes:/{flag=1;next} /^$/{flag=0} flag' | sed 's/^[[:space:]]*//' | head -n 1)
-        echo "Detected Scheme Name: '$SCHEME_NAME'"
-        if [ -z "$SCHEME_NAME" ]; then
-          echo "Error: Could not automatically detect an Xcode scheme!"
-          exit 1
-        fi
-        echo "TARGET_SCHEME=$SCHEME_NAME" >> $GITHUB_ENV
-        xcodebuild -project Amethyst.xcodeproj \
-                   -scheme "$SCHEME_NAME" \
-                   -configuration Release \
-                   -sdk iphoneos \
-                   CODE_SIGNING_ALLOWED=NO \
-                   CODE_SIGNING_REQUIRED=NO \
-                   DEBUG_INFORMATION_FORMAT=dwarf \
-                   JAVA_HOME="$JDK_BASE_PATH" \
-                   BOOTJDK="$JDK_BASE_PATH/bin" \
-                   clean build
+        make clean \
+          JAVA_HOME="$JDK_BASE_PATH" \
+          BOOTJDK="$JDK_BASE_PATH/bin" || true
 
-    - name: Package App into IPA
-      run: |
-        cd artifacts
-        zip -r ../Amethyst.ipa Payload
+        make \
+          JAVA_HOME="$JDK_BASE_PATH" \
+          BOOTJDK="$JDK_BASE_PATH/bin"
 
     - name: Upload Finished IPA
       uses: actions/upload-artifact@v4
       with:
         name: Amethyst
-        path: Amethyst.ipa
+        path: artifacts/org.angelauramc.amethyst-*-ios.ipa
