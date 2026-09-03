@@ -1,0 +1,105 @@
+name: Build OpenAL AEC Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Download OpenAL Soft
+        run: |
+          git clone https://github.com/kcat/openal-soft.git
+          cd openal-soft
+          git checkout 99f3f1c86a953b506b32ccf86914dfa29c4df0f0
+
+      - name: Patch iOS Voice Processing
+        run: |
+          cd openal-soft
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("alc/backends/coreaudio.cpp")
+          text = path.read_text()
+
+          old = "kAudioUnitSubType_RemoteIO"
+          new = "kAudioUnitSubType_VoiceProcessingIO"
+
+          count = text.count(old)
+
+          print("RemoteIO occurrences:", count)
+
+          if count != 2:
+              raise SystemExit(
+                  f"Expected exactly 2 RemoteIO occurrences, found {count}"
+              )
+
+          text = text.replace(old, new)
+
+          path.write_text(text)
+
+          print("Patched both iOS AudioUnits to VoiceProcessingIO")
+          PY
+
+          grep -n "VoiceProcessingIO" alc/backends/coreaudio.cpp
+
+      - name: Configure OpenAL Soft
+        run: |
+          cmake \
+            -S openal-soft \
+            -B openal-soft/build \
+            -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            -DALSOFT_REQUIRE_COREAUDIO=ON \
+            -DALSOFT_UTILS=OFF \
+            -DALSOFT_EXAMPLES=OFF \
+            -DALSOFT_TESTS=OFF \
+            -DALSOFT_INSTALL=OFF
+
+      - name: Build OpenAL Soft
+        run: |
+          cmake \
+            --build openal-soft/build \
+            --config Release \
+            --target OpenAL
+
+      - name: Collect libopenal
+        run: |
+          mkdir -p artifact
+
+          echo "Searching for built dylib..."
+
+          find openal-soft/build \
+            -type f \
+            -name 'libopenal*.dylib' \
+            -print
+
+          OPENAL_FILE="$(find openal-soft/build \
+            -type f \
+            -name 'libopenal*.dylib' \
+            | head -n 1)"
+
+          if [ -z "$OPENAL_FILE" ]; then
+            echo "ERROR: libopenal dylib was not found"
+            exit 1
+          fi
+
+          echo "Using: $OPENAL_FILE"
+
+          cp "$OPENAL_FILE" artifact/libopenal.dylib
+
+          file artifact/libopenal.dylib
+
+          xcrun vtool \
+            -show-build \
+            artifact/libopenal.dylib || true
+
+      - name: Upload OpenAL AEC Test
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenAL-AEC-Test
+          path: artifact/libopenal.dylib
