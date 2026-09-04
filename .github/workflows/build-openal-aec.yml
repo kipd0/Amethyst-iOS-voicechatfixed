@@ -14,7 +14,7 @@ jobs:
           cd openal-soft
           git checkout 99f3f1c86a953b506b32ccf86914dfa29c4df0f0
 
-      - name: Patch iOS Voice Processing
+      - name: Patch capture only to VoiceProcessingIO
         run: |
           cd openal-soft
 
@@ -24,26 +24,42 @@ jobs:
           path = Path("alc/backends/coreaudio.cpp")
           text = path.read_text()
 
-          old = "kAudioUnitSubType_RemoteIO"
-          new = "kAudioUnitSubType_VoiceProcessingIO"
+          needle = "desc.componentSubType = kAudioUnitSubType_RemoteIO;"
+          replacement = "desc.componentSubType = kAudioUnitSubType_VoiceProcessingIO;"
 
-          count = text.count(old)
+          count = text.count(needle)
 
-          print("RemoteIO occurrences:", count)
+          print("RemoteIO occurrences before patch:", count)
 
           if count != 2:
               raise SystemExit(
                   f"Expected exactly 2 RemoteIO occurrences, found {count}"
               )
 
-          text = text.replace(old, new)
+          # First occurrence = playback.
+          # Second occurrence = capture.
+          first = text.find(needle)
+          second = text.find(needle, first + len(needle))
+
+          if second == -1:
+              raise SystemExit("Could not locate capture RemoteIO occurrence")
+
+          text = (
+              text[:second]
+              + replacement
+              + text[second + len(needle):]
+          )
 
           path.write_text(text)
 
-          print("Patched both iOS AudioUnits to VoiceProcessingIO")
+          print("Playback remains RemoteIO")
+          print("Capture changed to VoiceProcessingIO")
           PY
 
-          grep -n "VoiceProcessingIO" alc/backends/coreaudio.cpp
+          echo "---- resulting AudioUnit types ----"
+          grep -n \
+            -E "kAudioUnitSubType_(RemoteIO|VoiceProcessingIO)" \
+            alc/backends/coreaudio.cpp
 
       - name: Configure OpenAL Soft
         run: |
@@ -71,13 +87,6 @@ jobs:
         run: |
           mkdir -p artifact
 
-          echo "Searching for built dylib..."
-
-          find openal-soft/build \
-            -type f \
-            -name 'libopenal*.dylib' \
-            -print
-
           OPENAL_FILE="$(find openal-soft/build \
             -type f \
             -name 'libopenal*.dylib' \
@@ -101,5 +110,5 @@ jobs:
       - name: Upload OpenAL AEC Test
         uses: actions/upload-artifact@v4
         with:
-          name: OpenAL-AEC-Test
+          name: OpenAL-AEC-CaptureOnly
           path: artifact/libopenal.dylib
