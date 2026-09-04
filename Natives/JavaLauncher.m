@@ -138,7 +138,42 @@ int launchJVM(
     int minVersion
 ) {
     NSLog(@"[JavaLauncher] Beginning JVM launch");
+        // Configure iOS audio for simultaneous game playback + voice chat capture.
+    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
+    NSError *audioError = nil;
 
+    BOOL categoryOK =
+        [audioSession
+            setCategory:AVAudioSessionCategoryPlayAndRecord
+            mode:AVAudioSessionModeVoiceChat
+            options:AVAudioSessionCategoryOptionDefaultToSpeaker
+            error:&audioError];
+
+    if (!categoryOK) {
+        NSLog(
+            @"[VoiceChat] Failed to configure AVAudioSession: %@",
+            audioError
+        );
+    } else {
+        audioError = nil;
+
+        BOOL activeOK =
+            [audioSession
+                setActive:YES
+                error:&audioError];
+
+        if (!activeOK) {
+            NSLog(
+                @"[VoiceChat] Failed to activate AVAudioSession: %@",
+                audioError
+            );
+        } else {
+            NSLog(
+                @"[VoiceChat] AVAudioSession active: "
+                 "PlayAndRecord + VoiceChat"
+            );
+        }
+    }
     init_loadDefaultEnv();
     init_loadCustomEnv();
 
