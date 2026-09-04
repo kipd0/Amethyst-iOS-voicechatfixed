@@ -1,5 +1,5 @@
 #include <mach/mach.h>
-
+#import <AVFoundation/AVFoundation.h>
 #include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
