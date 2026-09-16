@@ -391,19 +391,27 @@ static GameSurfaceView* pojavWindow;
 }
 
 - (void)updateControlHiddenState:(BOOL)hide {
+    // First update normal controls and drawers.
     for (UIView *view in self.ctrlView.subviews) {
         ControlButton *button = (ControlButton *)view;
         if (!button.canBeHidden) continue;
+        if ([button isKindOfClass:ControlSubButton.class]) continue;
+
         BOOL hidden = hide || !(
             (isGrabbing && [button.properties[@"displayInGame"] boolValue]) ||
             (!isGrabbing && [button.properties[@"displayInMenu"] boolValue]));
-        if (!hidden && ![button isKindOfClass:ControlSubButton.class]) {
-            button.hidden = hidden;
-            if ([button isKindOfClass:ControlDrawer.class]) {
-                [(ControlDrawer *)button restoreButtonVisibility];
+
+        button.hidden = hidden;
+    }
+
+    // Restore drawer children according to the drawer's open/closed state.
+    for (UIView *view in self.ctrlView.subviews) {
+        if ([view isKindOfClass:ControlDrawer.class]) {
+            ControlDrawer *drawer = (ControlDrawer *)view;
+
+            if (!drawer.hidden) {
+                [drawer restoreButtonVisibility];
             }
-        } else if (hidden) {
-            button.hidden = hidden;
         }
     }
 }
