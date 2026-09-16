@@ -7,48 +7,259 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 /*
  * Minecraft 26.3 / SDL3 compatibility bootstrap.
- *
- * The patched iOS SDL3 used by the bundled LWJGL requires SDL_SetMainReady()
- * before SDL_Init(SDL_INIT_VIDEO). Calling it from native code avoids loading
- * LWJGL from a second Java class loader just to reach SDLMain.
  */
 
 static void *gMC263SDLHandle;
+
 static uint32_t gMC263WindowID;
 static int gMC263WindowWidth;
 static int gMC263WindowHeight;
+
 static double gMC263LastGrabTime;
 static double gMC263LastKeyTime;
 
-extern void MC263Input_NoteWindow(uint32_t windowID, int w, int h);
+static atomic_bool gMC263MetalSyncPending = false;
+
+extern void MC263Input_NoteWindow(
+    uint32_t windowID,
+    int w,
+    int h
+);
+
 extern void MC263Input_NoteGrab(bool grabbed);
 
+
+/*
+ * Return the actual framebuffer size used by Amethyst.
+ *
+ * UIKit view sizes are in points. Minecraft/SDL mouse coordinates and
+ * the Vulkan swapchain need framebuffer pixels.
+ */
+static void MC263_GetHostFramebufferSize(
+    int *outWidth,
+    int *outHeight
+) {
+    int width = 0;
+    int height = 0;
+
+    UIView *surface = [SurfaceViewController surface];
+
+    if (surface != nil) {
+        CGFloat scale = surface.layer.contentsScale;
+
+        if (scale <= 0.0) {
+            scale = UIScreen.mainScreen.scale;
+        }
+
+        width = (int)llround(
+            surface.bounds.size.width * scale
+        );
+
+        height = (int)llround(
+            surface.bounds.size.height * scale
+        );
+    }
+
+    /*
+     * Fallback only. The SDL window dimensions are UIKit points,
+     * so convert them to pixels instead of returning them directly.
+     */
+    if (width <= 0 || height <= 0) {
+        CGFloat scale = UIScreen.mainScreen.scale;
+
+        if (scale <= 0.0) {
+            scale = 1.0;
+        }
+
+        width = (int)llround(
+            gMC263WindowWidth * scale
+        );
+
+        height = (int)llround(
+            gMC263WindowHeight * scale
+        );
+    }
+
+    if (outWidth != NULL) {
+        *outWidth = width;
+    }
+
+    if (outHeight != NULL) {
+        *outHeight = height;
+    }
+}
+
+
+/*
+ * Find SDL's Metal view inside Amethyst's game surface.
+ */
+static UIView *MC263_FindSDLMetalView(UIView *view) {
+    if (view == nil) {
+        return nil;
+    }
+
+    NSString *className =
+        NSStringFromClass(view.class);
+
+    if (
+        [className
+            rangeOfString:@"SDL_uikitmetalview"]
+            .location != NSNotFound
+    ) {
+        return view;
+    }
+
+    for (UIView *subview in view.subviews) {
+        UIView *result =
+            MC263_FindSDLMetalView(subview);
+
+        if (result != nil) {
+            return result;
+        }
+    }
+
+    return nil;
+}
+
+
+/*
+ * SDL normally creates its Metal layer using UIScreen.nativeScale.
+ *
+ * Amethyst can use a different resolution scale. Keep SDL's Metal
+ * layer in sync with the framebuffer size Amethyst exposes to
+ * Minecraft, otherwise MoltenVK returns VK_SUBOPTIMAL_KHR every
+ * frame and Minecraft continually recreates the swapchain.
+ */
+static void MC263_ScheduleMetalLayerSync(void) {
+    bool alreadyPending =
+        atomic_exchange_explicit(
+            &gMC263MetalSyncPending,
+            true,
+            memory_order_acq_rel
+        );
+
+    if (alreadyPending) {
+        return;
+    }
+
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+            UIView *surface =
+                [SurfaceViewController surface];
+
+            if (surface != nil) {
+                UIView *metalView =
+                    MC263_FindSDLMetalView(surface);
+
+                if (
+                    metalView != nil &&
+                    [metalView.layer
+                        isKindOfClass:CAMetalLayer.class]
+                ) {
+                    CAMetalLayer *metalLayer =
+                        (CAMetalLayer *)metalView.layer;
+
+                    CGFloat scale =
+                        surface.layer.contentsScale;
+
+                    if (scale <= 0.0) {
+                        scale =
+                            UIScreen.mainScreen.scale;
+                    }
+
+                    if (
+                        fabs(
+                            metalLayer.contentsScale -
+                            scale
+                        ) > 0.001
+                    ) {
+                        metalLayer.contentsScale =
+                            scale;
+                    }
+
+                    CGSize wantedSize =
+                        CGSizeMake(
+                            metalView.bounds.size.width *
+                                scale,
+                            metalView.bounds.size.height *
+                                scale
+                        );
+
+                    if (
+                        fabs(
+                            metalLayer.drawableSize.width -
+                            wantedSize.width
+                        ) > 0.5 ||
+                        fabs(
+                            metalLayer.drawableSize.height -
+                            wantedSize.height
+                        ) > 0.5
+                    ) {
+                        metalLayer.drawableSize =
+                            wantedSize;
+                    }
+                }
+            }
+
+            atomic_store_explicit(
+                &gMC263MetalSyncPending,
+                false,
+                memory_order_release
+            );
+        }
+    );
+}
+
+
 static void MC263_SetMainReady(void) {
-    if (gMC263SDLHandle != NULL) return;
+    if (gMC263SDLHandle != NULL) {
+        return;
+    }
 
-    NSString *path = [NSBundle.mainBundle.bundlePath
-        stringByAppendingPathComponent:@"Frameworks/libSDL3.dylib"];
+    NSString *path =
+        [NSBundle.mainBundle.bundlePath
+            stringByAppendingPathComponent:
+                @"Frameworks/libSDL3.dylib"];
 
-    gMC263SDLHandle = dlopen(path.UTF8String, RTLD_LAZY | RTLD_GLOBAL);
+    gMC263SDLHandle =
+        dlopen(
+            path.UTF8String,
+            RTLD_LAZY | RTLD_GLOBAL
+        );
 
     if (gMC263SDLHandle == NULL) {
-        NSLog(@"[MC263] Could not load libSDL3.dylib: %s", dlerror());
+        NSLog(
+            @"[MC263] Could not load libSDL3.dylib: %s",
+            dlerror()
+        );
         return;
     }
 
     void (*setMainReady)(void) =
-        (void (*)(void))dlsym(gMC263SDLHandle, "SDL_SetMainReady");
+        (void (*)(void))
+        dlsym(
+            gMC263SDLHandle,
+            "SDL_SetMainReady"
+        );
 
     if (setMainReady != NULL) {
         setMainReady();
-        NSLog(@"[MC263] SDL_SetMainReady called");
+
+        NSLog(
+            @"[MC263] SDL_SetMainReady called"
+        );
     } else {
-        NSLog(@"[MC263] SDL_SetMainReady symbol not found");
+        NSLog(
+            @"[MC263] SDL_SetMainReady symbol not found"
+        );
     }
 }
+
 
 __attribute__((constructor))
 static void MC263_Initialize(void) {
@@ -57,46 +268,29 @@ static void MC263_Initialize(void) {
     }
 }
 
+
+/*
+ * Give SDL Amethyst's existing game surface.
+ */
 __attribute__((used, visibility("default")))
 UIView *AASDL_GetHostView(void) {
     return [SurfaceViewController surface];
 }
 
+
+/*
+ * This must return framebuffer PIXELS, not UIKit points.
+ */
 __attribute__((used, visibility("default")))
-void AASDL_GetFramebufferSize(int *w, int *h) {
-    int width = gMC263WindowWidth;
-    int height = gMC263WindowHeight;
+void AASDL_GetFramebufferSize(
+    int *w,
+    int *h
+) {
+    MC263_GetHostFramebufferSize(w, h);
 
-    if (width <= 0 || height <= 0) {
-        UIView *surface = [SurfaceViewController surface];
-
-        if (surface != nil) {
-            CGFloat scale = surface.layer.contentsScale;
-
-            if (scale <= 0.0) {
-                scale = UIScreen.mainScreen.scale;
-            }
-
-            width =
-                (int)llround(
-                    surface.bounds.size.width *
-                    scale
-                );
-
-            height =
-                (int)llround(
-                    surface.bounds.size.height *
-                    scale
-                );
-        }
-    }
-
-    if (w != NULL)
-        *w = width;
-
-    if (h != NULL)
-        *h = height;
+    MC263_ScheduleMetalLayerSync();
 }
+
 
 __attribute__((used, visibility("default")))
 void AASDL_NoteWindow(
@@ -106,25 +300,44 @@ void AASDL_NoteWindow(
 ) {
     gMC263WindowID = windowID;
 
-    if (w > 0)
+    if (w > 0) {
         gMC263WindowWidth = w;
+    }
 
-    if (h > 0)
+    if (h > 0) {
         gMC263WindowHeight = h;
+    }
 
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+
+    MC263_GetHostFramebufferSize(
+        &framebufferWidth,
+        &framebufferHeight
+    );
+
+    /*
+     * The input bridge operates in framebuffer coordinates too,
+     * so give it the pixel dimensions rather than SDL's point size.
+     */
     MC263Input_NoteWindow(
         windowID,
-        w,
-        h
+        framebufferWidth,
+        framebufferHeight
     );
 
+    MC263_ScheduleMetalLayerSync();
+
     NSLog(
-        @"[MC263] SDL window id=%u size=%dx%d",
+        @"[MC263] SDL window id=%u points=%dx%d framebuffer=%dx%d",
         windowID,
         w,
-        h
+        h,
+        framebufferWidth,
+        framebufferHeight
     );
 }
+
 
 __attribute__((used, visibility("default")))
 void AASDL_NoteGrab(bool grabbed) {
@@ -142,7 +355,7 @@ void AASDL_NoteGrab(bool grabbed) {
             if (
                 [root
                     isKindOfClass:
-                    SurfaceViewController.class]
+                        SurfaceViewController.class]
             ) {
                 [(SurfaceViewController *)root
                     updateGrabState];
@@ -151,16 +364,19 @@ void AASDL_NoteGrab(bool grabbed) {
     );
 }
 
+
 __attribute__((used, visibility("default")))
 void AASDL_NoteCursorShape(int shape) {
     (void)shape;
 }
+
 
 __attribute__((used, visibility("default")))
 void AASDL_NoteKey(void) {
     gMC263LastKeyTime =
         CACurrentMediaTime();
 }
+
 
 __attribute__((used, visibility("default")))
 double AASDL_LastGrabChangeAge(void) {
@@ -172,6 +388,7 @@ double AASDL_LastGrabChangeAge(void) {
         CACurrentMediaTime() -
         gMC263LastGrabTime;
 }
+
 
 __attribute__((used, visibility("default")))
 bool AASDL_HardwareKeySeenWithin(
