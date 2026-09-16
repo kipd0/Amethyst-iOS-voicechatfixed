@@ -39,13 +39,15 @@ $(OUTPUTDIR)/launcher.jar: $(CLASSES) check_empty_classes
 	@$(BOOTJDK)/jar -cf $@ -C $(basename $@) .
 
 # Minecraft 26.3 test branch: use the prebuilt iOS LWJGL/SDL jar.
-# The old custom 3.3.3 classes are still compiled for source compatibility,
-# but this prebuilt jar is what gets placed at app/libs/lwjgl.jar.
-$(OUTPUTDIR)/lwjgl.jar: libs/others/lwjgl41/lwjgl.jar
+# Compile Amethyst's iOS shim classes first, then replace MacosUtil.class in
+# the prebuilt jar so Minecraft 26.3 sees the new method.
+$(OUTPUTDIR)/lwjgl.jar: $(CLASSES) libs/others/lwjgl41/lwjgl.jar
 	@set -e
 	@echo "Using Minecraft 26.3 LWJGL/SDL bundle"
 	@mkdir -p $(OUTPUTDIR)
 	@cp libs/others/lwjgl41/lwjgl.jar $@
+	@test -f $(OUTPUTDIR)/lwjgl/com/mojang/blaze3d/platform/MacosUtil.class
+	@cd $(OUTPUTDIR)/lwjgl && $(BOOTJDK)/jar -uf ../lwjgl.jar com/mojang/blaze3d/platform/MacosUtil.class
 
 $(OUTPUTDIR)/patchjna_agent.jar: $(CLASSES)
 	@set -e
