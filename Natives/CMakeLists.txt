@@ -99,6 +99,7 @@ add_executable(AngelAuraAmethyst
   main.m
   main_hook.m
   JavaLauncher.m
+  MC263Compat.m
   external/fishhook/fishhook.c
   UIKit+hook.m
 
