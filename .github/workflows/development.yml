@@ -31,6 +31,119 @@ jobs:
         sudo mkdir -p /usr/local/bin
         sudo ln -sf /opt/homebrew/bin/gmake /usr/local/bin/gmake
 
+    - name: Prepare Minecraft 26.3 JNI
+      run: |
+        set -e
+
+        JDK_BASE_PATH="${{ steps.setup-java.outputs.path }}"
+        WORK_DIR="$RUNNER_TEMP/lwjgl263"
+        LWJGL_JAR="$GITHUB_WORKSPACE/JavaApp/libs/others/lwjgl41/lwjgl.jar"
+
+        mkdir -p "$WORK_DIR/macos"
+        mkdir -p "$WORK_DIR/classes"
+
+        echo "Downloading LWJGL 3.4.3 JNI sources..."
+
+        curl -fsSL \
+          "https://raw.githubusercontent.com/LWJGL/lwjgl3/3.4.3/modules/lwjgl/core/src/generated/c/org_lwjgl_system_JNI.c" \
+          -o "$WORK_DIR/org_lwjgl_system_JNI.c"
+
+        curl -fsSL \
+          "https://raw.githubusercontent.com/LWJGL/lwjgl3/3.4.3/modules/lwjgl/core/src/main/c/common_tools.h" \
+          -o "$WORK_DIR/common_tools.h"
+
+        curl -fsSL \
+          "https://raw.githubusercontent.com/LWJGL/lwjgl3/3.4.3/modules/lwjgl/core/src/main/c/macos/macOSConfig.h" \
+          -o "$WORK_DIR/macos/macOSConfig.h"
+
+        curl -fsSL \
+          "https://raw.githubusercontent.com/LWJGL/lwjgl3/3.4.3/modules/lwjgl/core/src/generated/java/org/lwjgl/system/JNI.java" \
+          -o "$WORK_DIR/JNI.java"
+
+        echo "Adding iOS compatibility loader to JNI.java..."
+
+        python3 - "$WORK_DIR/JNI.java" <<'PY'
+        from pathlib import Path
+        import sys
+
+        path = Path(sys.argv[1])
+        text = path.read_text()
+
+        text = text.replace(
+            "import org.jspecify.annotations.*;\n",
+            ""
+        )
+        text = text.replace("@Nullable", "")
+
+        old = """    static {
+                Library.initialize();
+            }
+        """
+
+        new = """    static {
+                Library.initialize();
+
+                String bundlePath = System.getenv("BUNDLE_PATH");
+                if (bundlePath != null) {
+                    System.load(bundlePath + "/Frameworks/liblwjgl263jni.dylib");
+                }
+            }
+        """
+
+        if old not in text:
+            raise SystemExit("Could not find JNI static initializer")
+
+        path.write_text(text.replace(old, new, 1))
+        PY
+
+        echo "Building iOS JNI compatibility library..."
+
+        xcrun --sdk iphoneos clang \
+          -dynamiclib \
+          -arch arm64 \
+          -miphoneos-version-min=14.0 \
+          -DLWJGL_MACOS \
+          -DLWJGL_arm64 \
+          -I"$JDK_BASE_PATH/include" \
+          -I"$JDK_BASE_PATH/include/darwin" \
+          -I"$WORK_DIR" \
+          -I"$WORK_DIR/macos" \
+          "$WORK_DIR/org_lwjgl_system_JNI.c" \
+          -Wl,-install_name,@rpath/liblwjgl263jni.dylib \
+          -o "$GITHUB_WORKSPACE/Natives/resources/Frameworks/liblwjgl263jni.dylib"
+
+        ldid -S "$GITHUB_WORKSPACE/Natives/resources/Frameworks/liblwjgl263jni.dylib"
+
+        echo "Compiling LWJGL 3.4.3 JNI.class..."
+
+        "$JDK_BASE_PATH/bin/javac" \
+          -cp "$LWJGL_JAR" \
+          -d "$WORK_DIR/classes" \
+          "$WORK_DIR/JNI.java"
+
+        echo "Injecting JNI.class into the 26.3 LWJGL jar..."
+
+        cd "$WORK_DIR/classes"
+
+        "$JDK_BASE_PATH/bin/jar" \
+          -uf "$LWJGL_JAR" \
+          org/lwjgl/system/JNI.class
+
+        echo "Verifying required 26.3 JNI method..."
+
+        "$JDK_BASE_PATH/bin/javap" \
+          -classpath "$LWJGL_JAR" \
+          org.lwjgl.system.JNI \
+          | grep -F "invokePZ(int, long, long)"
+
+        echo "Verifying matching native JNI function..."
+
+        nm -gU \
+          "$GITHUB_WORKSPACE/Natives/resources/Frameworks/liblwjgl263jni.dylib" \
+          | grep "Java_org_lwjgl_system_JNI_invokePZ__IJJ"
+
+        echo "Minecraft 26.3 JNI compatibility layer ready."
+
     - name: Build Amethyst
       run: |
         JDK_BASE_PATH="${{ steps.setup-java.outputs.path }}"
