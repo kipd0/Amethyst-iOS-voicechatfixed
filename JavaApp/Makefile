@@ -38,13 +38,14 @@ $(OUTPUTDIR)/launcher.jar: $(CLASSES) check_empty_classes
 	@echo "Creating $@"
 	@$(BOOTJDK)/jar -cf $@ -C $(basename $@) .
 
-$(OUTPUTDIR)/lwjgl.jar: $(CLASSES) check_empty_classes
+# Minecraft 26.3 test branch: use the prebuilt iOS LWJGL/SDL jar.
+# The old custom 3.3.3 classes are still compiled for source compatibility,
+# but this prebuilt jar is what gets placed at app/libs/lwjgl.jar.
+$(OUTPUTDIR)/lwjgl.jar: libs/others/lwjgl41/lwjgl.jar
 	@set -e
-	@echo "Creating $@"
-	@mkdir -p $(OUTPUTDIR)/lwjgl_lib
-	@cd $(OUTPUTDIR)/lwjgl_lib && find ../../libs/lwjgl -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \; && rm -rf META-INF
-	@cp -R $(OUTPUTDIR)/lwjgl/* $(OUTPUTDIR)/lwjgl_lib/
-	@$(BOOTJDK)/jar -cf $@ -C $(OUTPUTDIR)/lwjgl_lib .
+	@echo "Using Minecraft 26.3 LWJGL/SDL bundle"
+	@mkdir -p $(OUTPUTDIR)
+	@cp libs/others/lwjgl41/lwjgl.jar $@
 
 $(OUTPUTDIR)/patchjna_agent.jar: $(CLASSES)
 	@set -e
