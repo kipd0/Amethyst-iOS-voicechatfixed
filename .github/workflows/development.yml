@@ -31,6 +31,56 @@ jobs:
         sudo mkdir -p /usr/local/bin
         sudo ln -sf /opt/homebrew/bin/gmake /usr/local/bin/gmake
 
+    - name: Update MoltenVK for Minecraft 26.3
+      run: |
+        set -euo pipefail
+
+        MVK_DIR="$RUNNER_TEMP/moltenvk142"
+        DEST="$GITHUB_WORKSPACE/Natives/resources/Frameworks/libMoltenVK.dylib"
+
+        rm -rf "$MVK_DIR"
+        mkdir -p "$MVK_DIR"
+        cd "$MVK_DIR"
+
+        echo "Downloading MoltenVK 1.4.2..."
+
+        curl -fL --retry 3 \
+          "https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-ios.tar" \
+          -o MoltenVK-ios.tar
+
+        tar -xf MoltenVK-ios.tar
+
+        echo "Finding iOS arm64 dynamic MoltenVK..."
+
+        MVK_BIN="$(find "$MVK_DIR" \
+          -type f \
+          -name "MoltenVK" \
+          -path "*dynamic*" \
+          | head -n 1)"
+
+        if [ -z "$MVK_BIN" ]; then
+          echo "ERROR: Could not find MoltenVK iOS arm64 binary."
+          find "$MVK_DIR" -type f | sort
+          exit 1
+        fi
+
+        echo "Using: $MVK_BIN"
+
+        cp "$MVK_BIN" "$DEST"
+        chmod 755 "$DEST"
+
+        codesign --remove-signature "$DEST" 2>/dev/null || true
+
+        install_name_tool \
+          -id "@rpath/libMoltenVK.dylib" \
+          "$DEST"
+
+        ldid -S "$DEST"
+
+        echo "New MoltenVK:"
+        file "$DEST"
+        otool -L "$DEST"
+
     - name: Prepare Minecraft 26.3 JNI
       run: |
         set -e
@@ -73,6 +123,7 @@ jobs:
             "import org.jspecify.annotations.*;\n",
             ""
         )
+
         text = text.replace("@Nullable", "")
 
         old = """    static {
