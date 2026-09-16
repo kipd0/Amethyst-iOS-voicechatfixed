@@ -23,6 +23,9 @@ static int gMC263WindowHeight;
 static double gMC263LastGrabTime;
 static double gMC263LastKeyTime;
 
+extern void MC263Input_NoteWindow(uint32_t windowID, int w, int h);
+extern void MC263Input_NoteGrab(bool grabbed);
+
 static void MC263_SetMainReady(void) {
     if (gMC263SDLHandle != NULL) return;
 
@@ -30,6 +33,7 @@ static void MC263_SetMainReady(void) {
         stringByAppendingPathComponent:@"Frameworks/libSDL3.dylib"];
 
     gMC263SDLHandle = dlopen(path.UTF8String, RTLD_LAZY | RTLD_GLOBAL);
+
     if (gMC263SDLHandle == NULL) {
         NSLog(@"[MC263] Could not load libSDL3.dylib: %s", dlerror());
         return;
@@ -37,6 +41,7 @@ static void MC263_SetMainReady(void) {
 
     void (*setMainReady)(void) =
         (void (*)(void))dlsym(gMC263SDLHandle, "SDL_SetMainReady");
+
     if (setMainReady != NULL) {
         setMainReady();
         NSLog(@"[MC263] SDL_SetMainReady called");
@@ -52,11 +57,6 @@ static void MC263_Initialize(void) {
     }
 }
 
-/*
- * Optional launcher hooks resolved by the patched SDL3 backend with dlsym().
- * These keep the SDL window attached to Amethyst's existing game surface.
- */
-
 __attribute__((used, visibility("default")))
 UIView *AASDL_GetHostView(void) {
     return [SurfaceViewController surface];
@@ -69,35 +69,86 @@ void AASDL_GetFramebufferSize(int *w, int *h) {
 
     if (width <= 0 || height <= 0) {
         UIView *surface = [SurfaceViewController surface];
+
         if (surface != nil) {
             CGFloat scale = surface.layer.contentsScale;
-            if (scale <= 0.0) scale = UIScreen.mainScreen.scale;
-            width = (int)llround(surface.bounds.size.width * scale);
-            height = (int)llround(surface.bounds.size.height * scale);
+
+            if (scale <= 0.0) {
+                scale = UIScreen.mainScreen.scale;
+            }
+
+            width =
+                (int)llround(
+                    surface.bounds.size.width *
+                    scale
+                );
+
+            height =
+                (int)llround(
+                    surface.bounds.size.height *
+                    scale
+                );
         }
     }
 
-    if (w != NULL) *w = width;
-    if (h != NULL) *h = height;
+    if (w != NULL)
+        *w = width;
+
+    if (h != NULL)
+        *h = height;
 }
 
 __attribute__((used, visibility("default")))
-void AASDL_NoteWindow(uint32_t windowID, int w, int h) {
+void AASDL_NoteWindow(
+    uint32_t windowID,
+    int w,
+    int h
+) {
     gMC263WindowID = windowID;
-    if (w > 0) gMC263WindowWidth = w;
-    if (h > 0) gMC263WindowHeight = h;
-    NSLog(@"[MC263] SDL window id=%u size=%dx%d", windowID, w, h);
+
+    if (w > 0)
+        gMC263WindowWidth = w;
+
+    if (h > 0)
+        gMC263WindowHeight = h;
+
+    MC263Input_NoteWindow(
+        windowID,
+        w,
+        h
+    );
+
+    NSLog(
+        @"[MC263] SDL window id=%u size=%dx%d",
+        windowID,
+        w,
+        h
+    );
 }
 
 __attribute__((used, visibility("default")))
 void AASDL_NoteGrab(bool grabbed) {
-    gMC263LastGrabTime = CACurrentMediaTime();
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *root = UIWindow.mainWindow.rootViewController;
-        if ([root isKindOfClass:SurfaceViewController.class]) {
-            [(SurfaceViewController *)root updateGrabState];
+    gMC263LastGrabTime =
+        CACurrentMediaTime();
+
+    MC263Input_NoteGrab(grabbed);
+
+    dispatch_async(
+        dispatch_get_main_queue(),
+        ^{
+            UIViewController *root =
+                UIWindow.mainWindow.rootViewController;
+
+            if (
+                [root
+                    isKindOfClass:
+                    SurfaceViewController.class]
+            ) {
+                [(SurfaceViewController *)root
+                    updateGrabState];
+            }
         }
-    });
+    );
 }
 
 __attribute__((used, visibility("default")))
@@ -107,17 +158,29 @@ void AASDL_NoteCursorShape(int shape) {
 
 __attribute__((used, visibility("default")))
 void AASDL_NoteKey(void) {
-    gMC263LastKeyTime = CACurrentMediaTime();
+    gMC263LastKeyTime =
+        CACurrentMediaTime();
 }
 
 __attribute__((used, visibility("default")))
 double AASDL_LastGrabChangeAge(void) {
-    if (gMC263LastGrabTime <= 0.0) return 9999.0;
-    return CACurrentMediaTime() - gMC263LastGrabTime;
+    if (gMC263LastGrabTime <= 0.0) {
+        return 9999.0;
+    }
+
+    return
+        CACurrentMediaTime() -
+        gMC263LastGrabTime;
 }
 
 __attribute__((used, visibility("default")))
-bool AASDL_HardwareKeySeenWithin(double seconds) {
-    return gMC263LastKeyTime > 0.0 &&
-           (CACurrentMediaTime() - gMC263LastKeyTime) <= seconds;
+bool AASDL_HardwareKeySeenWithin(
+    double seconds
+) {
+    return
+        gMC263LastKeyTime > 0.0 &&
+        (
+            CACurrentMediaTime() -
+            gMC263LastKeyTime
+        ) <= seconds;
 }
