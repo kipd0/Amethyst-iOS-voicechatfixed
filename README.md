@@ -1,7 +1,11 @@
 its vibecoded everything will break dw
 i have fixed 2 issues 
-1-voice chat
-2-26.3 minecraft version
+
+
+* voice chat
+* 26.3 minecraft version
+* fix the stupid bug where when u use drawer it closes the moment u open inventory
+* 
 
 
 
