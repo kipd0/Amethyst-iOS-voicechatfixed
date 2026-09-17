@@ -505,7 +505,7 @@ static GameSurfaceView* pojavWindow;
         CGRect frame = self.view.frame;
         frame.size = size;
         self.touchView.frame = frame;
-        self.inputTextField.frame = CGRectMake(0, -32.0, size.width, 30.0);
+        self.inputTextField.frame = CGRectMake(0, 0, size.width, 30.0);
         [self viewWillTransitionToSize_Navigation:frame];
 
         // Update custom controls button position
