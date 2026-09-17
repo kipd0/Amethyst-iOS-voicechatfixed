@@ -759,58 +759,65 @@ static void aasdl_pushKey(
     aasdl_PushEvent(&ev);
 }
 
+/*
+ * SDL_PushEvent copies the event structure, but the text field inside
+ * SDL_TextInputEvent is still a pointer. A stack buffer here becomes invalid
+ * as soon as this function returns and causes random/gibberish characters.
+ *
+ * Keep one permanent UTF-8 buffer for each UTF-16 code unit Amethyst can send.
+ * That makes every queued event's text pointer valid for the lifetime of the
+ * process without leaking memory per key press.
+ */
+static char aasdl_textCache[65536][4];
+static uint8_t aasdl_textCacheReady[65536];
+
 static void aasdl_pushTextInput(uint32_t codepoint) {
     if (aasdl_winID == 0)
         return;
 
-    static void (*sendKeyboardText)(const char *text);
+    /*
+     * TrackedTextField sends jchar values, so the normal input path is a
+     * UTF-16 code unit in the 0..65535 range.
+     */
+    if (codepoint > 0xFFFF)
+        return;
 
-    if (!sendKeyboardText) {
-        sendKeyboardText =
-            (void (*)(const char *))
-            dlsym(
-                RTLD_DEFAULT,
-                "SDL_SendKeyboardText"
-            );
+    char *utf8 = aasdl_textCache[codepoint];
 
-        if (!sendKeyboardText) {
-            NSLog(@"[SDLInject] SDL_SendKeyboardText not found");
-            return;
+    if (!aasdl_textCacheReady[codepoint]) {
+        if (codepoint < 0x80) {
+            utf8[0] = (char)codepoint;
+            utf8[1] = ' ';
+        } else if (codepoint < 0x800) {
+            utf8[0] =
+                (char)(0xC0 | (codepoint >> 6));
+            utf8[1] =
+                (char)(0x80 | (codepoint & 0x3F));
+            utf8[2] = ' ';
+        } else {
+            utf8[0] =
+                (char)(0xE0 | (codepoint >> 12));
+            utf8[1] =
+                (char)(0x80 | ((codepoint >> 6) & 0x3F));
+            utf8[2] =
+                (char)(0x80 | (codepoint & 0x3F));
+            utf8[3] = ' ';
         }
+
+        aasdl_textCacheReady[codepoint] = 1;
     }
 
-    char utf8[8];
+    AASDL_Event ev;
+    memset(&ev, 0, sizeof(ev));
 
-    if (codepoint < 0x80) {
-        utf8[0] = (char)codepoint;
-        utf8[1] = '\0';
-    } else if (codepoint < 0x800) {
-        utf8[0] =
-            (char)(0xC0 | (codepoint >> 6));
-        utf8[1] =
-            (char)(0x80 | (codepoint & 0x3F));
-        utf8[2] = '\0';
-    } else if (codepoint < 0x10000) {
-        utf8[0] =
-            (char)(0xE0 | (codepoint >> 12));
-        utf8[1] =
-            (char)(0x80 | ((codepoint >> 6) & 0x3F));
-        utf8[2] =
-            (char)(0x80 | (codepoint & 0x3F));
-        utf8[3] = '\0';
-    } else {
-        utf8[0] =
-            (char)(0xF0 | (codepoint >> 18));
-        utf8[1] =
-            (char)(0x80 | ((codepoint >> 12) & 0x3F));
-        utf8[2] =
-            (char)(0x80 | ((codepoint >> 6) & 0x3F));
-        utf8[3] =
-            (char)(0x80 | (codepoint & 0x3F));
-        utf8[4] = '\0';
-    }
+    AASDL_TextInputEvent *t =
+        (AASDL_TextInputEvent *)ev.raw;
 
-    sendKeyboardText(utf8);
+    t->type = 0x303; /* SDL_EVENT_TEXT_INPUT */
+    t->windowID = aasdl_winID;
+    t->text = utf8;
+
+    aasdl_PushEvent(&ev);
 }
 
 typedef struct {
