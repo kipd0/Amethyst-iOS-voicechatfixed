@@ -563,7 +563,6 @@ static GameSurfaceView* pojavWindow;
     if (gestureRecognizer.state == UIGestureRecognizerStateBegan) {
         if (self.inputTextField.isFirstResponder) {
             [self.inputTextField resignFirstResponder];
-            self.inputTextField.alpha = 1.0f;
         } else {
             [self.inputTextField becomeFirstResponder];
             // Insert an undeletable space
@@ -844,7 +843,6 @@ static GameSurfaceView* pojavWindow;
                     if (held == 0) {
                         if (self.inputTextField.isFirstResponder) {
                             [self.inputTextField resignFirstResponder];
-                            self.inputTextField.alpha = 1.0f;
                         } else {
                             [self.inputTextField becomeFirstResponder];
                             // Insert an undeletable space
