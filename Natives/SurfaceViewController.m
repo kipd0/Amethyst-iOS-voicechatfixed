@@ -185,7 +185,7 @@ static GameSurfaceView* pojavWindow;
     self.mousePointerView.userInteractionEnabled = NO;
     [self.touchView addSubview:self.mousePointerView];
 
-    sself.inputTextField = [[TrackedTextField alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 30.0)];
+    self.inputTextField = [[TrackedTextField alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 30.0)];
     self.inputTextField.alpha = 0.02f;
     self.inputTextField.backgroundColor = UIColor.secondarySystemBackgroundColor;
     self.inputTextField.delegate = self;
