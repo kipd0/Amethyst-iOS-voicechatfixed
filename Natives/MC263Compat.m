@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import "SurfaceViewController.h"
+#import <objc/runtime.h>
 
 #include <dlfcn.h>
 #include <math.h>
