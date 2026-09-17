@@ -763,39 +763,54 @@ static void aasdl_pushTextInput(uint32_t codepoint) {
     if (aasdl_winID == 0)
         return;
 
-    AASDL_Event ev;
-    memset(&ev, 0, sizeof(ev));
+    static void (*sendKeyboardText)(const char *text);
 
-    AASDL_TextInputEvent *t =
-        (AASDL_TextInputEvent *)ev.raw;
+    if (!sendKeyboardText) {
+        sendKeyboardText =
+            (void (*)(const char *))
+            dlsym(
+                RTLD_DEFAULT,
+                "SDL_SendKeyboardText"
+            );
+
+        if (!sendKeyboardText) {
+            NSLog(@"[SDLInject] SDL_SendKeyboardText not found");
+            return;
+        }
+    }
 
     char utf8[8];
 
     if (codepoint < 0x80) {
         utf8[0] = (char)codepoint;
-        utf8[1] = 0;
+        utf8[1] = '\0';
     } else if (codepoint < 0x800) {
-        utf8[0] = (char)(0xC0 | (codepoint >> 6));
-        utf8[1] = (char)(0x80 | (codepoint & 0x3F));
-        utf8[2] = 0;
+        utf8[0] =
+            (char)(0xC0 | (codepoint >> 6));
+        utf8[1] =
+            (char)(0x80 | (codepoint & 0x3F));
+        utf8[2] = '\0';
     } else if (codepoint < 0x10000) {
-        utf8[0] = (char)(0xE0 | (codepoint >> 12));
-        utf8[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
-        utf8[2] = (char)(0x80 | (codepoint & 0x3F));
-        utf8[3] = 0;
+        utf8[0] =
+            (char)(0xE0 | (codepoint >> 12));
+        utf8[1] =
+            (char)(0x80 | ((codepoint >> 6) & 0x3F));
+        utf8[2] =
+            (char)(0x80 | (codepoint & 0x3F));
+        utf8[3] = '\0';
     } else {
-        utf8[0] = (char)(0xF0 | (codepoint >> 18));
-        utf8[1] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
-        utf8[2] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
-        utf8[3] = (char)(0x80 | (codepoint & 0x3F));
-        utf8[4] = 0;
+        utf8[0] =
+            (char)(0xF0 | (codepoint >> 18));
+        utf8[1] =
+            (char)(0x80 | ((codepoint >> 12) & 0x3F));
+        utf8[2] =
+            (char)(0x80 | ((codepoint >> 6) & 0x3F));
+        utf8[3] =
+            (char)(0x80 | (codepoint & 0x3F));
+        utf8[4] = '\0';
     }
 
-    t->type = 0x303;
-    t->windowID = aasdl_winID;
-    t->text = utf8;
-
-    aasdl_PushEvent(&ev);
+    sendKeyboardText(utf8);
 }
 
 typedef struct {
