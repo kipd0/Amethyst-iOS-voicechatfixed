@@ -23,6 +23,7 @@
 #define fm NSFileManager.defaultManager
 
 extern char **environ;
+extern void AASDL_SetMainReady(void);
 
 BOOL validateVirtualMemorySpace(size_t size) {
     size <<= 20; // convert to MB
@@ -311,6 +312,33 @@ int launchJVM(
         @"Unexpected nil launchTarget"
     );
 
+    BOOL isMinecraft263Launch = NO;
+
+    if ([launchTarget isKindOfClass:NSDictionary.class]) {
+        id versionValue = launchTarget[@"id"];
+        id inheritsValue = launchTarget[@"inheritsFrom"];
+
+        NSString *versionId =
+            [versionValue isKindOfClass:NSString.class]
+                ? versionValue
+                : nil;
+
+        NSString *inheritsFrom =
+            [inheritsValue isKindOfClass:NSString.class]
+                ? inheritsValue
+                : nil;
+
+        isMinecraft263Launch =
+            [versionId isEqualToString:@"26.3"]
+            || [inheritsFrom isEqualToString:@"26.3"]
+            || [versionId hasSuffix:@"-26.3"];
+    }
+
+    if (isMinecraft263Launch) {
+        NSLog(@"[MC263] Preparing SDL3 runtime");
+        AASDL_SetMainReady();
+    }
+
     if ([launchTarget isKindOfClass:NSDictionary.class]) {
         // Get preferred Java version from current profile
         int preferredJavaVersion =
@@ -437,7 +465,6 @@ int launchJVM(
         NSError *error;
 
         [fm removeItemAtPath:dest error:nil];
-
         [fm
             copyItemAtPath:source
             toPath:dest
@@ -908,58 +935,58 @@ int launchJVM(
     NSLog(@"[Init] Found JLI lib");
 
     NSString *classpath =
-    [NSString
-        stringWithFormat:
-            @"%@/*",
-            librariesPath];
+        [NSString
+            stringWithFormat:
+                @"%@/*",
+                librariesPath];
 
-if (!launchJar && [launchTarget isKindOfClass:NSDictionary.class]) {
-    id versionValue = launchTarget[@"id"];
-    id inheritsValue = launchTarget[@"inheritsFrom"];
+    if (!launchJar && [launchTarget isKindOfClass:NSDictionary.class]) {
+        id versionValue = launchTarget[@"id"];
+        id inheritsValue = launchTarget[@"inheritsFrom"];
 
-    NSString *versionId =
-        [versionValue isKindOfClass:NSString.class]
-            ? versionValue
-            : nil;
+        NSString *versionId =
+            [versionValue isKindOfClass:NSString.class]
+                ? versionValue
+                : nil;
 
-    NSString *inheritsFrom =
-        [inheritsValue isKindOfClass:NSString.class]
-            ? inheritsValue
-            : nil;
+        NSString *inheritsFrom =
+            [inheritsValue isKindOfClass:NSString.class]
+                ? inheritsValue
+                : nil;
 
-    BOOL minecraft263 =
-        [versionId isEqualToString:@"26.3"]
-        || [inheritsFrom isEqualToString:@"26.3"]
-        || [versionId hasSuffix:@"-26.3"];
+        BOOL minecraft263 =
+            [versionId isEqualToString:@"26.3"]
+            || [inheritsFrom isEqualToString:@"26.3"]
+            || [versionId hasSuffix:@"-26.3"];
 
-    NSString *lwjglRelativePath =
-        minecraft263
-            ? @"lwjgl41/lwjgl.jar"
-            : @"lwjgllegacy/lwjgl.jar";
+        NSString *lwjglRelativePath =
+            minecraft263
+                ? @"lwjgl41/lwjgl.jar"
+                : @"lwjgllegacy/lwjgl.jar";
 
-    NSString *lwjglPath =
-        [librariesPath
-            stringByAppendingPathComponent:lwjglRelativePath];
+        NSString *lwjglPath =
+            [librariesPath
+                stringByAppendingPathComponent:lwjglRelativePath];
 
-    classpath =
-        [classpath
-            stringByAppendingFormat:
-                @":%@",
-                lwjglPath];
+        classpath =
+            [classpath
+                stringByAppendingFormat:
+                    @":%@",
+                    lwjglPath];
 
-    NSLog(
-        @"[LWJGL] Bootstrap classpath: %@",
-        lwjglPath
-    );
-}
+        NSLog(
+            @"[LWJGL] Bootstrap classpath: %@",
+            lwjglPath
+        );
+    }
 
-if (launchJar) {
-    classpath =
-        [classpath
-            stringByAppendingFormat:
-                @":%@",
-                launchTarget];
-}
+    if (launchJar) {
+        classpath =
+            [classpath
+                stringByAppendingFormat:
+                    @":%@",
+                    launchTarget];
+    }
 
     margv[++margc] =
         "-cp";
