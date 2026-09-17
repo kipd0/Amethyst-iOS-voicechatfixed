@@ -908,18 +908,58 @@ int launchJVM(
     NSLog(@"[Init] Found JLI lib");
 
     NSString *classpath =
-        [NSString
-            stringWithFormat:
-                @"%@/*",
-                librariesPath];
+    [NSString
+        stringWithFormat:
+            @"%@/*",
+            librariesPath];
 
-    if (launchJar) {
-        classpath =
-            [classpath
-                stringByAppendingFormat:
-                    @":%@",
-                    launchTarget];
-    }
+if (!launchJar && [launchTarget isKindOfClass:NSDictionary.class]) {
+    id versionValue = launchTarget[@"id"];
+    id inheritsValue = launchTarget[@"inheritsFrom"];
+
+    NSString *versionId =
+        [versionValue isKindOfClass:NSString.class]
+            ? versionValue
+            : nil;
+
+    NSString *inheritsFrom =
+        [inheritsValue isKindOfClass:NSString.class]
+            ? inheritsValue
+            : nil;
+
+    BOOL minecraft263 =
+        [versionId isEqualToString:@"26.3"]
+        || [inheritsFrom isEqualToString:@"26.3"]
+        || [versionId hasSuffix:@"-26.3"];
+
+    NSString *lwjglRelativePath =
+        minecraft263
+            ? @"lwjgl41/lwjgl.jar"
+            : @"lwjgllegacy/lwjgl.jar";
+
+    NSString *lwjglPath =
+        [librariesPath
+            stringByAppendingPathComponent:lwjglRelativePath];
+
+    classpath =
+        [classpath
+            stringByAppendingFormat:
+                @":%@",
+                lwjglPath];
+
+    NSLog(
+        @"[LWJGL] Bootstrap classpath: %@",
+        lwjglPath
+    );
+}
+
+if (launchJar) {
+    classpath =
+        [classpath
+            stringByAppendingFormat:
+                @":%@",
+                launchTarget];
+}
 
     margv[++margc] =
         "-cp";
