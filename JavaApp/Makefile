@@ -63,6 +63,10 @@ lwjgl_bundles: $(CLASSES) check_empty_classes libs/others/lwjgl41/lwjgl.jar
 $(OUTPUTDIR)/patchjna_agent.jar: $(CLASSES)
 	@set -e
 	@mv $(basename $@)/com/sun/jna/Platform.class $(basename $@)/com/sun/jna/Platform.class.patch
+	@mkdir -p $(basename $@)/com/mojang/blaze3d/platform
+	@test -f $(OUTPUTDIR)/lwjgl/com/mojang/blaze3d/platform/MacosUtil.class
+	@cp $(OUTPUTDIR)/lwjgl/com/mojang/blaze3d/platform/MacosUtil.class \
+		$(basename $@)/com/mojang/blaze3d/platform/MacosUtil.class.patch
 	@echo "Creating $@"
 	@$(BOOTJDK)/jar -cfm $@ $(SOURCEDIR)/patchjna_agent.txt -C $(basename $@) .
 
