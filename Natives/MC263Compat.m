@@ -322,7 +322,7 @@ static void MC263_SetMainReady(void) {
         );
         return;
     }
-
+    MC263_DisableSDLAutomaticKeyboard();
     void (*setMainReady)(void) =
         (void (*)(void))
         dlsym(
