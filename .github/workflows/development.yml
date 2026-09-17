@@ -2,7 +2,7 @@ name: Development Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "26.3-fix-possibly" ]
   workflow_dispatch:
 
 jobs:
@@ -30,6 +30,56 @@ jobs:
         brew install ldid wget make
         sudo mkdir -p /usr/local/bin
         sudo ln -sf /opt/homebrew/bin/gmake /usr/local/bin/gmake
+
+    - name: Update MoltenVK for Minecraft 26.3
+      run: |
+        set -euo pipefail
+
+        MVK_DIR="$RUNNER_TEMP/moltenvk142"
+        DEST="$GITHUB_WORKSPACE/Natives/resources/Frameworks/libMoltenVK.dylib"
+
+        rm -rf "$MVK_DIR"
+        mkdir -p "$MVK_DIR"
+        cd "$MVK_DIR"
+
+        echo "Downloading MoltenVK 1.4.2..."
+
+        curl -fL --retry 3 \
+          "https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-ios.tar" \
+          -o MoltenVK-ios.tar
+
+        tar -xf MoltenVK-ios.tar
+
+        echo "Finding iOS arm64 dynamic MoltenVK..."
+
+        MVK_BIN="$(find "$MVK_DIR" \
+          -type f \
+          -name "MoltenVK" \
+          -path "*dynamic*" \
+          | head -n 1)"
+
+        if [ -z "$MVK_BIN" ]; then
+          echo "ERROR: Could not find MoltenVK iOS arm64 binary."
+          find "$MVK_DIR" -type f | sort
+          exit 1
+        fi
+
+        echo "Using: $MVK_BIN"
+
+        cp "$MVK_BIN" "$DEST"
+        chmod 755 "$DEST"
+
+        codesign --remove-signature "$DEST" 2>/dev/null || true
+
+        install_name_tool \
+          -id "@rpath/libMoltenVK.dylib" \
+          "$DEST"
+
+        ldid -S "$DEST"
+
+        echo "New MoltenVK:"
+        file "$DEST"
+        otool -L "$DEST"
 
     - name: Prepare Minecraft 26.3 JNI
       run: |
@@ -73,6 +123,7 @@ jobs:
             "import org.jspecify.annotations.*;\n",
             ""
         )
+
         text = text.replace("@Nullable", "")
 
         old = """    static {
@@ -85,7 +136,7 @@ jobs:
 
                 String bundlePath = System.getenv("BUNDLE_PATH");
                 if (bundlePath != null) {
-                    System.load(bundlePath + "/Frameworks/liblwjgl263jni.dylib");
+                    System.load(bundlePath + "/Frameworks/MC263/liblwjgl263jni.dylib");
                 }
             }
         """
@@ -143,6 +194,85 @@ jobs:
           | grep "Java_org_lwjgl_system_JNI_invokePZ__IJJ"
 
         echo "Minecraft 26.3 JNI compatibility layer ready."
+
+    - name: Separate legacy and Minecraft 26.3 natives
+      run: |
+        set -euo pipefail
+
+        FRAMEWORKS="$GITHUB_WORKSPACE/Natives/resources/Frameworks"
+        MC263="$FRAMEWORKS/MC263"
+        LEGACY_REF="f67d3b19ed9a2d96898bbd67d8f1331715e2d981"
+
+        rm -rf "$MC263"
+        mkdir -p "$MC263"
+
+        echo "Saving Minecraft 26.3 native libraries..."
+
+        MC263_FILES=(
+          libMoltenVK.dylib
+          libSDL3.0.dylib
+          libSDL3.dylib
+          libfreetype.dylib
+          libglfw.dylib
+          libglfw_async.dylib
+          liblwjgl.dylib
+          liblwjgl263jni.dylib
+          liblwjgl_msdfgen.dylib
+          liblwjgl_nanovg.dylib
+          liblwjgl_opengl.dylib
+          liblwjgl_stb.dylib
+          liblwjgl_tinyfd.dylib
+          liblwjgl_vma.dylib
+          libopenal.dylib
+          libshaderc.dylib
+          libspirv-cross.dylib
+        )
+
+        for name in "${MC263_FILES[@]}"; do
+          if [ ! -f "$FRAMEWORKS/$name" ]; then
+            echo "ERROR: Missing 26.3 native: $name"
+            exit 1
+          fi
+          cp "$FRAMEWORKS/$name" "$MC263/$name"
+        done
+
+        echo "Restoring Amethyst legacy native libraries..."
+
+        LEGACY_FILES=(
+          libMoltenVK.dylib
+          libfreetype.dylib
+          liblwjgl.dylib
+          liblwjgl_nanovg.dylib
+          liblwjgl_opengl.dylib
+          liblwjgl_stb.dylib
+          liblwjgl_tinyfd.dylib
+          liblwjgl_vma.dylib
+          libopenal.dylib
+          libshaderc.dylib
+        )
+
+        for name in "${LEGACY_FILES[@]}"; do
+          curl -fL --retry 3 \
+            "https://raw.githubusercontent.com/kipd0/Amethyst-iOS-voicechatfixed/$LEGACY_REF/Natives/resources/Frameworks/$name" \
+            -o "$FRAMEWORKS/$name"
+        done
+
+        echo "Removing 26.3-only libraries from the legacy Frameworks directory..."
+
+        rm -f \
+          "$FRAMEWORKS/libSDL3.0.dylib" \
+          "$FRAMEWORKS/libSDL3.dylib" \
+          "$FRAMEWORKS/libglfw.dylib" \
+          "$FRAMEWORKS/libglfw_async.dylib" \
+          "$FRAMEWORKS/liblwjgl263jni.dylib" \
+          "$FRAMEWORKS/liblwjgl_msdfgen.dylib" \
+          "$FRAMEWORKS/libspirv-cross.dylib"
+
+        echo "Legacy Frameworks:"
+        find "$FRAMEWORKS" -maxdepth 1 -type f -name '*.dylib' -print | sort
+
+        echo "Minecraft 26.3 Frameworks:"
+        find "$MC263" -maxdepth 1 -type f -name '*.dylib' -print | sort
 
     - name: Build Amethyst
       run: |
