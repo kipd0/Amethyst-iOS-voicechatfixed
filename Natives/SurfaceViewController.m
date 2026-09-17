@@ -185,7 +185,8 @@ static GameSurfaceView* pojavWindow;
     self.mousePointerView.userInteractionEnabled = NO;
     [self.touchView addSubview:self.mousePointerView];
 
-    self.inputTextField = [[TrackedTextField alloc] initWithFrame:CGRectMake(0, -32.0, self.view.frame.size.width, 30.0)];
+    self.inputTextField = [[TrackedTextField alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 30.0)];
+    self.inputTextField.alpha = 0.02f;
     self.inputTextField.backgroundColor = UIColor.secondarySystemBackgroundColor;
     self.inputTextField.delegate = self;
     self.inputTextField.font = [UIFont fontWithName:@"Menlo-Regular" size:20];
@@ -504,7 +505,7 @@ static GameSurfaceView* pojavWindow;
         CGRect frame = self.view.frame;
         frame.size = size;
         self.touchView.frame = frame;
-        self.inputTextField.frame = CGRectMake(0, -32.0, size.width, 30.0);
+        self.inputTextField.frame = CGRectMake(0, 0, size.width, 30.0);
         [self viewWillTransitionToSize_Navigation:frame];
 
         // Update custom controls button position
@@ -562,7 +563,6 @@ static GameSurfaceView* pojavWindow;
     if (gestureRecognizer.state == UIGestureRecognizerStateBegan) {
         if (self.inputTextField.isFirstResponder) {
             [self.inputTextField resignFirstResponder];
-            self.inputTextField.alpha = 1.0f;
         } else {
             [self.inputTextField becomeFirstResponder];
             // Insert an undeletable space
@@ -843,7 +843,6 @@ static GameSurfaceView* pojavWindow;
                     if (held == 0) {
                         if (self.inputTextField.isFirstResponder) {
                             [self.inputTextField resignFirstResponder];
-                            self.inputTextField.alpha = 1.0f;
                         } else {
                             [self.inputTextField becomeFirstResponder];
                             // Insert an undeletable space

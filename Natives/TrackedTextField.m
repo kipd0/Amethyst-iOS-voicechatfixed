@@ -18,6 +18,11 @@ extern bool isUseStackQueueCall;
 @end
 
 @implementation TrackedTextField
+// Keep the text field inside the visible window for the iOS keyboard,
+// but never let it steal touches from Minecraft.
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    return NO;
+}
 
 - (void)sendMultiBackspaces:(int)times {
     for (int i = 0; i < times; i++) {

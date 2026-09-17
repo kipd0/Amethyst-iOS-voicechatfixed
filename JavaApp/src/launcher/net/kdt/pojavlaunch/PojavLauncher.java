@@ -6,15 +6,89 @@ import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.*;
 
-import org.lwjgl.glfw.CallbackBridge;
-import org.lwjgl.glfw.GLFW;
-
 import net.kdt.pojavlaunch.uikit.*;
 import net.kdt.pojavlaunch.utils.*;
 import net.kdt.pojavlaunch.value.*;
 
 public class PojavLauncher {
     private static float currProgress, maxProgress;
+
+    private static boolean isMinecraft263(JMinecraftVersionList.Version version, String requestedId) {
+        if (version == null) {
+            return false;
+        }
+
+        if ("26.3".equals(version.id) || "26.3".equals(version.inheritsFrom)) {
+            return true;
+        }
+
+        if (version.id != null && version.id.endsWith("-26.3")) {
+            return true;
+        }
+
+        return requestedId != null
+                && ("26.3".equals(requestedId) || requestedId.endsWith("-26.3"));
+    }
+
+    private static void configureLWJGL(JMinecraftVersionList.Version version, String requestedId) throws Exception {
+        boolean minecraft263 = isMinecraft263(version, requestedId);
+
+        File bundleDir = new File(Tools.DIR_BUNDLE);
+        File lwjglJar = new File(
+                bundleDir,
+                minecraft263
+                        ? "libs/lwjgl41/lwjgl.jar"
+                        : "libs/lwjgllegacy/lwjgl.jar"
+        );
+
+        File frameworkDir = new File(
+                bundleDir,
+                minecraft263
+                        ? "Frameworks/MC263"
+                        : "Frameworks"
+        );
+
+        if (!lwjglJar.isFile()) {
+            throw new FileNotFoundException(
+                    "Missing bundled LWJGL jar: " + lwjglJar.getAbsolutePath()
+            );
+        }
+
+        if (!frameworkDir.isDirectory()) {
+            throw new FileNotFoundException(
+                    "Missing bundled LWJGL native directory: " + frameworkDir.getAbsolutePath()
+            );
+        }
+
+        // The selected LWJGL jar is already placed on the JVM's initial
+        // classpath by JavaLauncher.m. Do not add it to PojavClassLoader
+        // here: Minecraft 26.3's signed client jar shares the
+        // com.mojang.blaze3d.platform package with our MacosUtil shim, and
+        // defining both in the same loader triggers a signer mismatch.
+        System.setProperty(
+                "org.lwjgl.librarypath",
+                frameworkDir.getAbsolutePath()
+        );
+
+        if (minecraft263) {
+            System.setProperty(
+                    "org.lwjgl.vulkan.libname",
+                    new File(frameworkDir, "libMoltenVK.dylib").getAbsolutePath()
+            );
+        } else {
+            System.setProperty(
+                    "org.lwjgl.vulkan.libname",
+                    "libMoltenVK.dylib"
+            );
+        }
+
+        System.out.println(
+                "[LWJGL] Runtime: "
+                        + (minecraft263 ? "Minecraft 26.3" : "legacy")
+                        + ", jar=" + lwjglJar.getAbsolutePath()
+                        + ", natives=" + frameworkDir.getAbsolutePath()
+        );
+    }
 
     public static void main(String[] args) throws Throwable {
         // Skip calling to com.apple.eawt.Application.nativeInitializeApplicationDelegate()
@@ -73,10 +147,11 @@ public class PojavLauncher {
             }
         }
 
-        System.setProperty("org.lwjgl.vulkan.libname", "libMoltenVK.dylib");
-
         MinecraftAccount account = MinecraftAccount.load(args[0]);
         JMinecraftVersionList.Version version = Tools.getVersionInfo(args[1]);
+
+        configureLWJGL(version, args[1]);
+
         System.out.println("Launching Minecraft " + version.id);
         String configPath;
         if (version.logging != null) {
