@@ -299,7 +299,8 @@ static void MC263_DisableSDLAutomaticKeyboard(void) {
     }
 }
 
-static void MC263_SetMainReady(void) {
+__attribute__((used, visibility("default")))
+void AASDL_SetMainReady(void) {
     if (gMC263SDLHandle != NULL) {
         return;
     }
@@ -307,7 +308,7 @@ static void MC263_SetMainReady(void) {
     NSString *path =
         [NSBundle.mainBundle.bundlePath
             stringByAppendingPathComponent:
-                @"Frameworks/libSDL3.dylib"];
+                @"Frameworks/MC263/libSDL3.dylib"];
 
     gMC263SDLHandle =
         dlopen(
@@ -322,7 +323,9 @@ static void MC263_SetMainReady(void) {
         );
         return;
     }
+
     MC263_DisableSDLAutomaticKeyboard();
+
     void (*setMainReady)(void) =
         (void (*)(void))
         dlsym(
@@ -340,14 +343,6 @@ static void MC263_SetMainReady(void) {
         NSLog(
             @"[MC263] SDL_SetMainReady symbol not found"
         );
-    }
-}
-
-
-__attribute__((constructor))
-static void MC263_Initialize(void) {
-    @autoreleasepool {
-        MC263_SetMainReady();
     }
 }
 
