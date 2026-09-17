@@ -1,8 +1,7 @@
-what this fork does?
-fixes the voice chat now you can use your mic !
-fixes the echo now it will not echo when other people talk!
-if something doesn’t work about voice chat please report it to me via discord my username is kipd0
-also aamc can u guys unban me from the discord server pleawse?
+its vibecoded everything will break dw
+i have fixed 2 issues 
+1-voice chat
+2-26.3 minecraft version
 
 
 
