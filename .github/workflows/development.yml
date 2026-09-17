@@ -2,7 +2,7 @@ name: Development Build
 
 on:
   push:
-    branches: [ "26.3-fix-possibly" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
