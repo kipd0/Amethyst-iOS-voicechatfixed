@@ -216,6 +216,88 @@ static void MC263_ScheduleMetalLayerSync(void) {
     );
 }
 
+/*
+ * Minecraft 26.3 uses SDL_StartTextInput whenever a text box gains focus.
+ * On iOS, SDL responds by focusing its own hidden UITextField, which
+ * automatically opens the system keyboard.
+ *
+ * Amethyst already owns its own TrackedTextField and opens it manually,
+ * so prevent only SDL's private field from becoming first responder.
+ */
+static BOOL MC263_BlockSDLAutomaticKeyboard(
+    id self,
+    SEL _cmd
+) {
+    return NO;
+}
+
+static void MC263_DisableSDLAutomaticKeyboard(void) {
+    Class cls =
+        NSClassFromString(@"SDLUITextField");
+
+    if (cls == Nil) {
+        NSLog(
+            @"[MC263] SDLUITextField not found"
+        );
+        return;
+    }
+
+    SEL selector =
+        @selector(becomeFirstResponder);
+
+    Method method =
+        class_getInstanceMethod(
+            cls,
+            selector
+        );
+
+    if (method == NULL) {
+        NSLog(
+            @"[MC263] SDLUITextField becomeFirstResponder not found"
+        );
+        return;
+    }
+
+    const char *types =
+        method_getTypeEncoding(method);
+
+    /*
+     * SDLUITextField currently inherits becomeFirstResponder.
+     * Add an override only to this class so we don't affect normal
+     * UITextFields such as Amethyst's TrackedTextField.
+     */
+    if (
+        class_addMethod(
+            cls,
+            selector,
+            (IMP)MC263_BlockSDLAutomaticKeyboard,
+            types
+        )
+    ) {
+        NSLog(
+            @"[MC263] Disabled SDL automatic keyboard"
+        );
+    } else {
+        /*
+         * Future SDL versions may implement it directly.
+         * In that case replace SDLUITextField's implementation only.
+         */
+        Method ownMethod =
+            class_getInstanceMethod(
+                cls,
+                selector
+            );
+
+        method_setImplementation(
+            ownMethod,
+            (IMP)MC263_BlockSDLAutomaticKeyboard
+        );
+
+        NSLog(
+            @"[MC263] Disabled SDL automatic keyboard"
+        );
+    }
+}
 
 static void MC263_SetMainReady(void) {
     if (gMC263SDLHandle != NULL) {
