@@ -7,11 +7,12 @@ CLASSES := $(SOURCES:$(SOURCEDIR)/%.java=$(OUTPUTDIR)/%.class)
 
 TARGETS := $(shell find $(SOURCEDIR) -mindepth 1 -maxdepth 1 -type d)
 TARGETS := $(TARGETS:$(SOURCEDIR)/%=$(OUTPUTDIR)/%.jar)
+TARGETS := $(filter-out $(OUTPUTDIR)/lwjgl.jar,$(TARGETS))
 
 # Add all jars to classpath and allow compiling with private API
 JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/*/*.jar))" -XDignore.symbol.file
 
-all: $(TARGETS)
+all: $(TARGETS) lwjgl_bundles
 
 # Sometimes the CI produces empty class file resulting in broken jar, so we check and abort here
 check_empty_classes:
@@ -38,16 +39,26 @@ $(OUTPUTDIR)/launcher.jar: $(CLASSES) check_empty_classes
 	@echo "Creating $@"
 	@$(BOOTJDK)/jar -cf $@ -C $(basename $@) .
 
-# Minecraft 26.3 test branch: use the prebuilt iOS LWJGL/SDL jar.
-# Compile Amethyst's iOS shim classes first, then replace MacosUtil.class in
-# the prebuilt jar so Minecraft 26.3 sees the new method.
-$(OUTPUTDIR)/lwjgl.jar: $(CLASSES) libs/others/lwjgl41/lwjgl.jar
+# Keep two LWJGL bundles:
+# - lwjgllegacy/lwjgl.jar: Amethyst's original LWJGL bundle for 1.21.11 and older.
+# - lwjgl41/lwjgl.jar: Minecraft 26.3 LWJGL/SDL bundle.
+#
+# Neither bundle is placed directly in app/libs, so PojavLauncher can select
+# the correct one before Minecraft loads any LWJGL classes.
+lwjgl_bundles: $(CLASSES) check_empty_classes libs/others/lwjgl41/lwjgl.jar
 	@set -e
-	@echo "Using Minecraft 26.3 LWJGL/SDL bundle"
-	@mkdir -p $(OUTPUTDIR)
-	@cp libs/others/lwjgl41/lwjgl.jar $@
+	@echo "Creating legacy LWJGL bundle"
+	@rm -rf $(OUTPUTDIR)/lwjgl_lib
+	@mkdir -p $(OUTPUTDIR)/lwjgl_lib
+	@cd $(OUTPUTDIR)/lwjgl_lib && find ../../libs/lwjgl -name 'lwjgl*.jar' -exec $(BOOTJDK)/jar -xf {} \; && rm -rf META-INF
+	@cp -R $(OUTPUTDIR)/lwjgl/* $(OUTPUTDIR)/lwjgl_lib/
+	@rm -f $(OUTPUTDIR)/lwjgl_lib/com/mojang/blaze3d/platform/MacosUtil.class
+	@rm -rf libs/others/lwjgllegacy
+	@mkdir -p libs/others/lwjgllegacy
+	@$(BOOTJDK)/jar -cf libs/others/lwjgllegacy/lwjgl.jar -C $(OUTPUTDIR)/lwjgl_lib .
+	@echo "Updating Minecraft 26.3 LWJGL bundle"
 	@test -f $(OUTPUTDIR)/lwjgl/com/mojang/blaze3d/platform/MacosUtil.class
-	@cd $(OUTPUTDIR)/lwjgl && $(BOOTJDK)/jar -uf ../lwjgl.jar com/mojang/blaze3d/platform/MacosUtil.class
+	@cd $(OUTPUTDIR)/lwjgl && $(BOOTJDK)/jar -uf ../../libs/others/lwjgl41/lwjgl.jar com/mojang/blaze3d/platform/MacosUtil.class
 
 $(OUTPUTDIR)/patchjna_agent.jar: $(CLASSES)
 	@set -e
@@ -69,6 +80,7 @@ $(OUTPUTDIR)/patchsvc.jar: $(CLASSES)
 
 clean:
 	rm -rf $(OUTPUTDIR)
+	rm -rf libs/others/lwjgllegacy
 
 .SUFFIXES: .java
-.PHONY: all clean
+.PHONY: all clean lwjgl_bundles
