@@ -60,11 +60,11 @@ public class PojavLauncher {
             );
         }
 
-        PojavClassLoader loader =
-                (PojavClassLoader) ClassLoader.getSystemClassLoader();
-
-        loader.addURL(lwjglJar.toURI().toURL());
-
+        // The selected LWJGL jar is already placed on the JVM's initial
+        // classpath by JavaLauncher.m. Do not add it to PojavClassLoader
+        // here: Minecraft 26.3's signed client jar shares the
+        // com.mojang.blaze3d.platform package with our MacosUtil shim, and
+        // defining both in the same loader triggers a signer mismatch.
         System.setProperty(
                 "org.lwjgl.librarypath",
                 frameworkDir.getAbsolutePath()
