@@ -891,12 +891,19 @@ static BOOL aasdl_mapKey(
         return YES;
     }
 
-    if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) {
+    if (key >= GLFW_KEY_1 && key <= GLFW_KEY_9) {
         *scancode =
-            30 + (key - GLFW_KEY_0);
+            30 + (key - GLFW_KEY_1);
 
         *keycode =
             (uint32_t)key;
+
+        return YES;
+    }
+
+    if (key == GLFW_KEY_0) {
+        *scancode = 39;
+        *keycode = (uint32_t)key;
 
         return YES;
     }
