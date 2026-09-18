@@ -359,7 +359,8 @@ jobs:
 
           echo "Validating packaged Minecraft 26.3 runtime in: $SOURCE"
 
-          CONTENTS="$(unzip -Z1 "$SOURCE")"
+          CONTENTS_FILE="$RUNNER_TEMP/amethyst-release-contents.txt"
+          unzip -Z1 "$SOURCE" > "$CONTENTS_FILE"
 
           for required in \
             "Frameworks/MC263/libSDL3.dylib" \
@@ -371,8 +372,10 @@ jobs:
             "Frameworks/MC263/libspirv-cross.dylib" \
             "libs/lwjgl41/lwjgl.jar"
           do
-            if ! printf '%s\n' "$CONTENTS" | grep -Fq "$required"; then
+            if ! grep -Fq "$required" "$CONTENTS_FILE"; then
               echo "ERROR: Packaged release is missing $required"
+              echo "Matching MC263 entries found in package:"
+              grep -F "Frameworks/MC263/" "$CONTENTS_FILE" || true
               exit 1
             fi
           done
